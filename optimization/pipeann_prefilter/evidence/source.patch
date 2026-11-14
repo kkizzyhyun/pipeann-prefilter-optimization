@@ -1,0 +1,39 @@
+diff --git a/src/search/spec_filter_search.cpp b/src/search/spec_filter_search.cpp
+index 2c084c2..9e1d404 100644
+--- a/src/search/spec_filter_search.cpp
++++ b/src/search/spec_filter_search.cpp
+@@ -4,6 +4,9 @@
+ #include <malloc.h>
+ #include <algorithm>
+ #include <limits>
++#include <cstdlib>
++#include <cerrno>
++#include <stdexcept>
+ 
+ #include <omp.h>
+ #include <chrono>
+@@ -90,6 +93,24 @@ namespace pipeann {
+       }
+     }
+ 
++    // Calibrate the route on this machine without changing either search path.
++    // Zero/unset retains the original cost model. This threshold is opt-in.
++    static const double prefilter_max_selectivity = []() {
++      const char *value = std::getenv("FVS_PREFILTER_MAX_SELECTIVITY");
++      if (value == nullptr) return 0.0;
++      char *end = nullptr;
++      errno = 0;
++      const double threshold = std::strtod(value, &end);
++      if (errno != 0 || end == value || *end != '\0' ||
++          !std::isfinite(threshold) || threshold < 0.0 || threshold > 1.0) {
++        throw std::invalid_argument("FVS_PREFILTER_MAX_SELECTIVITY must be in [0,1]");
++      }
++      return threshold;
++    }();
++    if (prefilter_max_selectivity > 0.0 && selectivity <= prefilter_max_selectivity) {
++      min_filter_type = PRE_FILTER;
++    }
++
+     if (stats != nullptr) {
+       stats->n_filter[min_filter_type]++;
+       stats->n_est_filter_reads[min_filter_type] += filter_cost[min_filter_type].ssd_reads;
